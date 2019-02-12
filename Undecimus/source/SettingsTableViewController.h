@@ -35,7 +35,6 @@
 @property (weak, nonatomic) IBOutlet UISwitch *DumpAPTicketSwitch;
 @property (weak, nonatomic) IBOutlet UISwitch *RefreshIconCacheSwitch;
 @property (weak, nonatomic) IBOutlet UITextField *BootNonceTextField;
-@property (weak, nonatomic) IBOutlet UISegmentedControl *KernelExploitSegmentedControl;
 @property (weak, nonatomic) IBOutlet UIButton *restartButton;
 @property (weak, nonatomic) IBOutlet UISwitch *DisableAutoUpdatesSwitch;
 @property (weak, nonatomic) IBOutlet UISwitch *DisableAppRevokesSwitch;
@@ -55,6 +54,9 @@
 @property (weak, nonatomic) IBOutlet UIButton *RestartSpringBoardButton;
 @property (weak, nonatomic) IBOutlet UISwitch *HideLogWindowSwitch;
 @property (weak, nonatomic) IBOutlet UISwitch *ResetCydiaCacheSwitch;
+@property (weak, nonatomic) IBOutlet UITextField *exploitField;
+@property (nonatomic) UIPickerView *exploitPicker;
+@property (nonatomic) NSMutableArray *exploitPickerData;
 
 + (NSDictionary *)_provisioningProfileAtPath:(NSString *)path;
 

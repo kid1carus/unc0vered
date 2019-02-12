@@ -211,6 +211,33 @@
     [myView setAutoresizingMask:UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight];
     [myImageView addSubview:myView];
     [self.tableView setBackgroundView:myImageView];
+    _exploitPicker = [[UIPickerView alloc] init];
+    _exploitPickerData = [[NSMutableArray alloc] init];
+    if (supportsExploit(empty_list_exploit)) {
+        [_exploitPickerData addObject:@"empty_list"];
+    }
+    if (supportsExploit(multi_path_exploit)) {
+        [_exploitPickerData addObject:@"multi_path"];
+    }
+    if (supportsExploit(async_wake_exploit)) {
+        [_exploitPickerData addObject:@"async_wake"];
+    }
+    if (supportsExploit(voucher_swap_exploit)) {
+        [_exploitPickerData addObject:@"voucher_swap"];
+    }
+    if (supportsExploit(v1ntex_exploit)) {
+        [_exploitPickerData addObject:@"v1ntex"];
+    }
+    if ([_exploitPickerData count] == 0) {
+        [_exploitPickerData addObject:@"Your device is not supported."];
+    }
+    if ([[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT] > [_exploitPickerData count]) {
+        [[NSUserDefaults standardUserDefaults] setInteger:0 forKey:K_EXPLOIT];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+    [[self exploitPicker] setDataSource:self];
+    [[self exploitPicker] setDelegate:self];
+    [self.exploitField setInputView:_exploitPicker];
     [self.BootNonceTextField setDelegate:self];
     self.tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(userTappedAnyware:)];
     self.tap.cancelsTouchesInView = NO;
@@ -235,15 +262,14 @@
     [self.BootNonceTextField setPlaceholder:[[NSUserDefaults standardUserDefaults] objectForKey:K_BOOT_NONCE]];
     [self.BootNonceTextField setText:nil];
     [self.RefreshIconCacheSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_REFRESH_ICON_CACHE]];
-    [self.KernelExploitSegmentedControl setSelectedSegmentIndex:[[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]];
     [self.DisableAutoUpdatesSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_DISABLE_AUTO_UPDATES]];
     [self.DisableAppRevokesSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_DISABLE_APP_REVOKES]];
-    [self.KernelExploitSegmentedControl setEnabled:supportsExploit(empty_list_exploit) forSegmentAtIndex:empty_list_exploit];
-    [self.KernelExploitSegmentedControl setEnabled:supportsExploit(multi_path_exploit) forSegmentAtIndex:multi_path_exploit];
-    [self.KernelExploitSegmentedControl setEnabled:supportsExploit(async_wake_exploit) forSegmentAtIndex:async_wake_exploit];
-    [self.KernelExploitSegmentedControl setEnabled:supportsExploit(voucher_swap_exploit) forSegmentAtIndex:voucher_swap_exploit];
-    [self.KernelExploitSegmentedControl setEnabled:supportsExploit(v1ntex_exploit) forSegmentAtIndex:v1ntex_exploit];
     [self.OpenCydiaButton setEnabled:[[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"cydia://"]]];
+    if ([[_exploitPickerData objectAtIndex:[[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]] isEqualToString:@"Your device is not supported."]) {
+        [[self exploitField] setPlaceholder:@"None"];
+    } else {
+        [[self exploitField] setPlaceholder:[NSString stringWithFormat:@"%@", [_exploitPickerData objectAtIndex:[[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]]]];
+    }
     [self.ExpiryLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)[[SettingsTableViewController _provisioningProfileAtPath:[[NSBundle mainBundle] pathForResource:@"embedded" ofType:@"mobileprovision"]][@"ExpirationDate"] timeIntervalSinceDate:[NSDate date]] / 86400, NSLocalizedString(@"Days", nil)]];
     [self.OverwriteBootNonceSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_OVERWRITE_BOOT_NONCE]];
     [self.ExportKernelTaskPortSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_EXPORT_KERNEL_TASK_PORT]];
@@ -293,11 +319,6 @@
 
 - (IBAction)RefreshIconCacheSwitchTriggered:(id)sender {
     [[NSUserDefaults standardUserDefaults] setBool:[self.RefreshIconCacheSwitch isOn] forKey:K_REFRESH_ICON_CACHE];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    [self reloadData];
-}
-- (IBAction)KernelExploitSegmentedControl:(id)sender {
-    [[NSUserDefaults standardUserDefaults] setInteger:self.KernelExploitSegmentedControl.selectedSegmentIndex forKey:K_EXPLOIT];
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self reloadData];
 }
@@ -429,7 +450,9 @@
 }
 
 - (IBAction)tappedOnAutomaticallySelectExploit:(id)sender {
-    [[NSUserDefaults standardUserDefaults] setInteger:recommendedJailbreakSupport() forKey:K_EXPLOIT];
+    NSArray *allExploits = @[@"async_wake", @"voucher_swap", @"multi_path", @"v1ntex", @"empty_list"];
+    NSUInteger recommendedExploitInt = [_exploitPickerData indexOfObject:[allExploits objectAtIndex:recommendedJailbreakSupport()]];
+    [[NSUserDefaults standardUserDefaults] setInteger:recommendedExploitInt forKey:K_EXPLOIT];
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self reloadData];
 }
@@ -479,6 +502,29 @@
     [[NSUserDefaults standardUserDefaults] setBool:[self.ResetCydiaCacheSwitch isOn] forKey:K_RESET_CYDIA_CACHE];
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self reloadData];
+}
+
+- (long)numberOfComponentsInPickerView:(UIPickerView *)pickerView
+{
+    return 1;
+}
+
+- (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component
+{
+    return [_exploitPickerData count];
+}
+
+- (NSString*)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component
+{
+    return [_exploitPickerData objectAtIndex:row];
+}
+
+- (void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component
+{
+    NSArray *allExploits = @[@"async_wake", @"voucher_swap", @"multi_path", @"v1ntex", @"empty_list"];
+    NSUInteger recommendedExploitInt = [_exploitPickerData indexOfObject:[allExploits objectAtIndex:row]];
+    [[NSUserDefaults standardUserDefaults] setInteger:recommendedExploitInt forKey:K_EXPLOIT];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 - (void)didReceiveMemoryWarning {
