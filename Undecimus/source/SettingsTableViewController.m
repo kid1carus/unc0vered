@@ -211,7 +211,13 @@
     [myView setAutoresizingMask:UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight];
     [myImageView addSubview:myView];
     [self.tableView setBackgroundView:myImageView];
-    _exploitPicker = [[UIPickerView alloc] init];
+    CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
+    UIBarButtonItem *moveOver = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:self action:nil];
+    UIBarButtonItem *doneBarButton = [[UIBarButtonItem alloc] initWithTitle:@"Done" style:UIBarButtonItemStyleDone target:self action:@selector(pickerDoneButton)];
+    UIToolbar *toolBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, screenWidth, 44)];
+    [toolBar setItems:@[moveOver, doneBarButton]];
+    [toolBar setBarStyle:UIBarStyleDefault];
+    _exploitPicker = [[UIPickerView alloc] initWithFrame:CGRectMake(0, toolBar.frame.size.height, screenWidth, 200)];
     _exploitPickerData = [[NSMutableArray alloc] init];
     if (supportsExploit(empty_list_exploit)) {
         [_exploitPickerData addObject:@"empty_list"];
@@ -237,7 +243,11 @@
     }
     [[self exploitPicker] setDataSource:self];
     [[self exploitPicker] setDelegate:self];
-    [self.exploitField setInputView:_exploitPicker];
+    UIView *exploitFieldInputView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, screenWidth, toolBar.frame.size.height + _exploitPicker.frame.size.height)];
+    exploitFieldInputView.backgroundColor = [UIColor clearColor];
+    [exploitFieldInputView addSubview:_exploitPicker];
+    [exploitFieldInputView addSubview:toolBar];
+    [self.exploitField setInputView:exploitFieldInputView];
     [self.BootNonceTextField setDelegate:self];
     self.tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(userTappedAnyware:)];
     self.tap.cancelsTouchesInView = NO;
@@ -525,6 +535,10 @@
     NSUInteger recommendedExploitInt = [_exploitPickerData indexOfObject:[allExploits objectAtIndex:row]];
     [[NSUserDefaults standardUserDefaults] setInteger:recommendedExploitInt forKey:K_EXPLOIT];
     [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+-(void)pickerDoneButton{
+    [_exploitField resignFirstResponder];
 }
 
 - (void)didReceiveMemoryWarning {
