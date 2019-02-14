@@ -219,20 +219,20 @@
     [toolBar setBarStyle:UIBarStyleDefault];
     _exploitPicker = [[UIPickerView alloc] initWithFrame:CGRectMake(0, toolBar.frame.size.height, screenWidth, 200)];
     _exploitPickerData = [[NSMutableArray alloc] init];
-    if (supportsExploit(empty_list_exploit)) {
-        [_exploitPickerData addObject:@"empty_list"];
-    }
-    if (supportsExploit(multi_path_exploit)) {
-        [_exploitPickerData addObject:@"multi_path"];
-    }
     if (supportsExploit(async_wake_exploit)) {
         [_exploitPickerData addObject:@"async_wake"];
     }
     if (supportsExploit(voucher_swap_exploit)) {
         [_exploitPickerData addObject:@"voucher_swap"];
     }
+    if (supportsExploit(multi_path_exploit)) {
+        [_exploitPickerData addObject:@"multi_path"];
+    }
     if (supportsExploit(v1ntex_exploit)) {
         [_exploitPickerData addObject:@"v1ntex"];
+    }
+    if (supportsExploit(empty_list_exploit)) {
+        [_exploitPickerData addObject:@"empty_list"];
     }
     if ([_exploitPickerData count] == 0) {
         [_exploitPickerData addObject:@"Your device is not supported."];
