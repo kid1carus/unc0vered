@@ -107,7 +107,7 @@ typedef struct {
     bool install_openssh;
     bool reload_system_daemons;
     bool reset_cydia_cache;
-    int exploit;
+    const char *exploit;
 } prefs_t;
 
 #define ISADDR(val)            (val != 0 && val != HUGE_VAL && val != -HUGE_VAL)
@@ -618,7 +618,7 @@ bool load_prefs(prefs_t *prefs, NSDictionary *defaults) {
     prefs->install_openssh = [defaults[K_INSTALL_OPENSSH] boolValue];
     prefs->reload_system_daemons = [defaults[K_RELOAD_SYSTEM_DAEMONS] boolValue];
     prefs->reset_cydia_cache = [defaults[K_RESET_CYDIA_CACHE] boolValue];
-    prefs->exploit = [defaults[K_EXPLOIT] intValue];
+    prefs->exploit = [defaults[K_EXPLOIT] UTF8String];
     return true;
 }
 
@@ -699,93 +699,81 @@ void jailbreak()
             kernel_slide = persisted_kernel_slide;
             exploit_success = true;
         } else {
-            switch (prefs.exploit) {
-                case empty_list_exploit: {
-                    if (vfs_sploit() &&
-                        MACH_PORT_VALID(tfp0) &&
-                        ISADDR((kernel_base = find_kernel_base())) &&
-                        ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
-                        ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
-                        exploit_success = true;
-                    }
-                    break;
+            NSString *exploitString = [NSString stringWithFormat:@"%s", prefs.exploit];
+            if ([exploitString isEqualToString:@"empty_list"]) {
+                if (vfs_sploit() &&
+                    MACH_PORT_VALID(tfp0) &&
+                    ISADDR((kernel_base = find_kernel_base())) &&
+                    ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
+                    ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
+                    exploit_success = true;
                 }
-                case multi_path_exploit: {
-                    if (mptcp_go() &&
-                        MACH_PORT_VALID(tfp0) &&
-                        ISADDR((kernel_base = find_kernel_base())) &&
-                        ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
-                        ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
-                        exploit_success = true;
-                    }
-                    break;
+            } else if ([exploitString isEqualToString:@"multi_path"]){
+                if (mptcp_go() &&
+                    MACH_PORT_VALID(tfp0) &&
+                    ISADDR((kernel_base = find_kernel_base())) &&
+                    ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
+                    ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
+                    exploit_success = true;
                 }
-                case async_wake_exploit: {
-                    if (async_wake_go() &&
-                        MACH_PORT_VALID(tfp0) &&
-                        ISADDR((kernel_base = find_kernel_base())) &&
-                        ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
-                        ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
-                        exploit_success = true;
-                    }
-                    break;
+            } else if ([exploitString isEqualToString:@"async_wake"]) {
+                if (async_wake_go() &&
+                    MACH_PORT_VALID(tfp0) &&
+                    ISADDR((kernel_base = find_kernel_base())) &&
+                    ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
+                    ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
+                    exploit_success = true;
                 }
-                case voucher_swap_exploit: {
-                    voucher_swap();
-                    offsets_init();
-                    prepare_for_rw_with_fake_tfp0(kernel_task_port);
-                    if (MACH_PORT_VALID(tfp0) &&
-                        ISADDR((kernel_base = find_kernel_base())) &&
-                        ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
-                        ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
-                        exploit_success = true;
-                    }
-                    break;
+            } else if ([exploitString isEqualToString:@"voucher_swap"]) {
+                voucher_swap();
+                offsets_init();
+                prepare_for_rw_with_fake_tfp0(kernel_task_port);
+                if (MACH_PORT_VALID(tfp0) &&
+                    ISADDR((kernel_base = find_kernel_base())) &&
+                    ReadKernel32(kernel_base) == MACH_HEADER_MAGIC &&
+                    ISADDR((kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS)))) {
+                    exploit_success = true;
                 }
-                case v1ntex_exploit: {
-                    const char *kernelCacheDownloadPath = [temporaryDirectory stringByAppendingPathComponent:@"kernel"].UTF8String;
-                    LOG("kernelCacheDownloadPath = %s", kernelCacheDownloadPath);
-                    const char *kernelCacheDownloadedPath = [homeDirectory stringByAppendingPathComponent:@"Documents/kernel"].UTF8String;
-                    LOG("kernelCacheDownloadedPath = %s", kernelCacheDownloadedPath);
-                    const char *kernelCacheFilesystemPath = "/System/Library/Caches/com.apple.kernelcaches/kernelcache";
-                    LOG("kernelCacheFilesystemPath = %s", kernelCacheFilesystemPath);
-                    _assert(clean_file(kernelCacheDownloadPath), message, true);
-                    const char *kernelCachePath = NULL;
-                    if (canRead(kernelCacheFilesystemPath)) {
-                        kernelCachePath = kernelCacheFilesystemPath;
-                        LOG("Found kernelcache in filesystem.");
-                    } else if (canRead(kernelCacheDownloadedPath)) {
-                        kernelCachePath = kernelCacheDownloadedPath;
-                        LOG("Found kernelcache in documents.");
-                    } else {
-                        LOG("Downloading kernelcache from Apple...");
-                        NOTICE(NSLocalizedString(@"Downloading kernelcache from Apple. This may take a while.", nil), false, false);
-                        _assert(grabkernel((char *)kernelCacheDownloadPath) == ERR_SUCCESS, message, true);
-                        _assert(rename(kernelCacheDownloadPath, kernelCacheDownloadedPath) == ERR_SUCCESS, message, true);
-                        kernelCachePath = kernelCacheDownloadedPath;
-                        LOG("Successfully downloaded kernelcache from Apple.");
-                    }
-                    LOG("kernelCachePath = %s", kernelCachePath);
-                    v1ntex_offsets *v1ntex_offs = NULL;
-                    if ((v1ntex_offs = get_v1ntex_offsets(kernelCachePath)) == NULL) {
-                        _assert(clean_file(kernelCacheDownloadedPath), message, true);
-                        _assert(false, message, true);
-                    }
-                    if (v1ntex(v1ntex_callback, NULL, v1ntex_offs) == ERR_SUCCESS &&
-                        MACH_PORT_VALID(tfp0) &&
-                        ISADDR(kernel_base) &&
-                        ISADDR(kernel_slide)) {
-                        exploit_success = true;
-                    }
-                    break;
+            } else if ([exploitString isEqualToString:@"v1ntex"]) {
+                const char *kernelCacheDownloadPath = [temporaryDirectory stringByAppendingPathComponent:@"kernel"].UTF8String;
+                LOG("kernelCacheDownloadPath = %s", kernelCacheDownloadPath);
+                const char *kernelCacheDownloadedPath = [homeDirectory stringByAppendingPathComponent:@"Documents/kernel"].UTF8String;
+                LOG("kernelCacheDownloadedPath = %s", kernelCacheDownloadedPath);
+                const char *kernelCacheFilesystemPath = "/System/Library/Caches/com.apple.kernelcaches/kernelcache";
+                LOG("kernelCacheFilesystemPath = %s", kernelCacheFilesystemPath);
+                _assert(clean_file(kernelCacheDownloadPath), message, true);
+                const char *kernelCachePath = NULL;
+                if (canRead(kernelCacheFilesystemPath)) {
+                    kernelCachePath = kernelCacheFilesystemPath;
+                    LOG("Found kernelcache in filesystem.");
+                } else if (canRead(kernelCacheDownloadedPath)) {
+                    kernelCachePath = kernelCacheDownloadedPath;
+                    LOG("Found kernelcache in documents.");
+                } else {
+                    LOG("Downloading kernelcache from Apple...");
+                    NOTICE(NSLocalizedString(@"Downloading kernelcache from Apple. This may take a while.", nil), false, false);
+                    _assert(grabkernel((char *)kernelCacheDownloadPath) == ERR_SUCCESS, message, true);
+                    _assert(rename(kernelCacheDownloadPath, kernelCacheDownloadedPath) == ERR_SUCCESS, message, true);
+                    kernelCachePath = kernelCacheDownloadedPath;
+                    LOG("Successfully downloaded kernelcache from Apple.");
                 }
-                default: {
-                    NOTICE(NSLocalizedString(@"No exploit selected.", nil), false, false);
-                    STATUS(NSLocalizedString(@"Jailbreak", nil), true, true);
-                    return;
-                    break;
+                LOG("kernelCachePath = %s", kernelCachePath);
+                v1ntex_offsets *v1ntex_offs = NULL;
+                if ((v1ntex_offs = get_v1ntex_offsets(kernelCachePath)) == NULL) {
+                    _assert(clean_file(kernelCacheDownloadedPath), message, true);
+                    _assert(false, message, true);
                 }
-            }
+                if (v1ntex(v1ntex_callback, NULL, v1ntex_offs) == ERR_SUCCESS &&
+                    MACH_PORT_VALID(tfp0) &&
+                    ISADDR(kernel_base) &&
+                    ISADDR(kernel_slide)) {
+                    exploit_success = true;
+                }
+            } else {
+                NOTICE(NSLocalizedString(@"No exploit selected.", nil), false, false);
+                STATUS(NSLocalizedString(@"Jailbreak", nil), true, true);
+            
+                }
         }
         LOG("tfp0: 0x%x", tfp0);
         LOG("kernel_base: " ADDR, kernel_base);

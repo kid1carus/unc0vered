@@ -237,10 +237,6 @@
     if ([_exploitPickerData count] == 0) {
         [_exploitPickerData addObject:@"Your device is not supported."];
     }
-    if ([[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT] > [_exploitPickerData count]) {
-        [[NSUserDefaults standardUserDefaults] setInteger:0 forKey:K_EXPLOIT];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
     [[self exploitPicker] setDataSource:self];
     [[self exploitPicker] setDelegate:self];
     UIView *exploitFieldInputView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, screenWidth, toolBar.frame.size.height + _exploitPicker.frame.size.height)];
@@ -248,6 +244,28 @@
     [exploitFieldInputView addSubview:_exploitPicker];
     [exploitFieldInputView addSubview:toolBar];
     [self.exploitField setInputView:exploitFieldInputView];
+    if ([[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]) {
+        switch (recommendedJailbreakSupport()) {
+            case async_wake_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"async_wake" forKey:K_EXPLOIT];
+                break;
+            case voucher_swap_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"voucher_swap" forKey:K_EXPLOIT];
+                break;
+            case multi_path_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"multi_path" forKey:K_EXPLOIT];
+                break;
+            case v1ntex_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"v1ntex" forKey:K_EXPLOIT];
+                break;
+            case empty_list_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"empty_list" forKey:K_EXPLOIT];
+                break;
+            default:
+                break;
+        }
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
     [self.BootNonceTextField setDelegate:self];
     self.tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(userTappedAnyware:)];
     self.tap.cancelsTouchesInView = NO;
@@ -258,6 +276,7 @@
 - (void)userTappedAnyware:(UITapGestureRecognizer *) sender
 {
     [self.view endEditing:YES];
+    [self reloadData];
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
@@ -275,11 +294,8 @@
     [self.DisableAutoUpdatesSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_DISABLE_AUTO_UPDATES]];
     [self.DisableAppRevokesSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_DISABLE_APP_REVOKES]];
     [self.OpenCydiaButton setEnabled:[[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"cydia://"]]];
-    if ([[_exploitPickerData objectAtIndex:[[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]] isEqualToString:@"Your device is not supported."]) {
-        [[self exploitField] setPlaceholder:@"None"];
-    } else {
-        [[self exploitField] setPlaceholder:[NSString stringWithFormat:@"%@", [_exploitPickerData objectAtIndex:[[NSUserDefaults standardUserDefaults] integerForKey:K_EXPLOIT]]]];
-    }
+    NSDictionary *userDefaultsDictionary = [[[NSUserDefaults alloc] initWithUser:@"mobile"] dictionaryRepresentation];
+    [self.exploitField setPlaceholder:userDefaultsDictionary[K_EXPLOIT]];
     [self.ExpiryLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)[[SettingsTableViewController _provisioningProfileAtPath:[[NSBundle mainBundle] pathForResource:@"embedded" ofType:@"mobileprovision"]][@"ExpirationDate"] timeIntervalSinceDate:[NSDate date]] / 86400, NSLocalizedString(@"Days", nil)]];
     [self.OverwriteBootNonceSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_OVERWRITE_BOOT_NONCE]];
     [self.ExportKernelTaskPortSwitch setOn:[[NSUserDefaults standardUserDefaults] boolForKey:K_EXPORT_KERNEL_TASK_PORT]];
@@ -460,9 +476,25 @@
 }
 
 - (IBAction)tappedOnAutomaticallySelectExploit:(id)sender {
-    NSArray *allExploits = @[@"async_wake", @"voucher_swap", @"multi_path", @"v1ntex", @"empty_list"];
-    NSUInteger recommendedExploitInt = [_exploitPickerData indexOfObject:[allExploits objectAtIndex:recommendedJailbreakSupport()]];
-    [[NSUserDefaults standardUserDefaults] setInteger:recommendedExploitInt forKey:K_EXPLOIT];
+    switch (recommendedJailbreakSupport()) {
+        case async_wake_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"async_wake" forKey:K_EXPLOIT];
+            break;
+        case voucher_swap_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"voucher_swap" forKey:K_EXPLOIT];
+            break;
+        case multi_path_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"multi_path" forKey:K_EXPLOIT];
+            break;
+        case v1ntex_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"v1ntex" forKey:K_EXPLOIT];
+            break;
+        case empty_list_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"empty_list" forKey:K_EXPLOIT];
+            break;
+        default:
+            break;
+    }
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self reloadData];
 }
@@ -531,14 +563,13 @@
 
 - (void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component
 {
-    NSArray *allExploits = @[@"async_wake", @"voucher_swap", @"multi_path", @"v1ntex", @"empty_list"];
-    NSUInteger recommendedExploitInt = [_exploitPickerData indexOfObject:[allExploits objectAtIndex:row]];
-    [[NSUserDefaults standardUserDefaults] setInteger:recommendedExploitInt forKey:K_EXPLOIT];
+    [[NSUserDefaults standardUserDefaults] setObject:[_exploitPickerData objectAtIndex:row] forKey:K_EXPLOIT];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 -(void)pickerDoneButton{
     [_exploitField resignFirstResponder];
+    [self reloadData];
 }
 
 - (void)didReceiveMemoryWarning {

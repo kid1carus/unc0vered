@@ -109,7 +109,6 @@
     }
     if ([[NSUserDefaults standardUserDefaults] objectForKey:K_EXPLOIT] == nil) {
         NSMutableArray *supportedExploits = [[NSMutableArray alloc] init];
-        NSArray *allExploits = @[@"async_wake", @"voucher_swap", @"multi_path", @"v1ntex", @"empty_list"];
         if (supportsExploit(async_wake_exploit)) {
             [supportedExploits addObject:@"async_wake"];
         }
@@ -126,30 +125,9 @@
             [supportedExploits addObject:@"empty_list"];
         }
         if ([supportedExploits count] == 0) {
-            _recommendedExploitInt = -1;
-        } else {
-            switch ([allExploits indexOfObject:[supportedExploits objectAtIndex:0]]) {
-                case 0:
-                    _recommendedExploitInt = 2;
-                    break;
-                case 1:
-                    _recommendedExploitInt = 3;
-                    break;
-                case 2:
-                    _recommendedExploitInt = 1;
-                    break;
-                case 3:
-                    _recommendedExploitInt = 4;
-                    break;
-                case 4:
-                    _recommendedExploitInt = 0;
-                    break;
-                default:
-                    _recommendedExploitInt = -1;
-                    break;
-            }
+            [supportedExploits addObject:@"None"];
         }
-        [[NSUserDefaults standardUserDefaults] setInteger:_recommendedExploitInt forKey:K_EXPLOIT];
+        [[NSUserDefaults standardUserDefaults] setObject:[supportedExploits objectAtIndex:0] forKey:K_EXPLOIT];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
     if ([[NSUserDefaults standardUserDefaults] objectForKey:K_DISABLE_AUTO_UPDATES] == nil) {
