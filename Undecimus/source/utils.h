@@ -23,6 +23,7 @@ typedef enum {
     async_wake_exploit,
     voucher_swap_exploit,
     v1ntex_exploit,
+    v3ntex_exploit,
     deja_xnu_exploit,
     necp_exploit
 } exploit_t;
@@ -119,6 +120,7 @@ void cleanLogs(void);
 bool modifyPlist(NSString *filename, void (^function)(id));
 void list(NSString *directory);
 bool canRead(const char *file);
+bool restartSpringBoard(void);
 
 extern NSData *lastSystemOutput;
 

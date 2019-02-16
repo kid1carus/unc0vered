@@ -234,6 +234,9 @@
     if (supportsExploit(empty_list_exploit)) {
         [_exploitPickerData addObject:@"empty_list"];
     }
+    if (supportsExploit(v3ntex_exploit)) {
+        [_exploitPickerData addObject:@"v3ntex"];
+    }
     if ([_exploitPickerData count] == 0) {
         [_exploitPickerData addObject:@"Your device is not supported."];
     }
@@ -260,6 +263,9 @@
                 break;
             case empty_list_exploit:
                 [[NSUserDefaults standardUserDefaults] setObject:@"empty_list" forKey:K_EXPLOIT];
+                break;
+            case v3ntex_exploit:
+                [[NSUserDefaults standardUserDefaults] setObject:@"v3ntex" forKey:K_EXPLOIT];
                 break;
             default:
                 break;
@@ -492,6 +498,8 @@
         case empty_list_exploit:
             [[NSUserDefaults standardUserDefaults] setObject:@"empty_list" forKey:K_EXPLOIT];
             break;
+        case v3ntex_exploit:
+            [[NSUserDefaults standardUserDefaults] setObject:@"v3ntex" forKey:K_EXPLOIT];
         default:
             break;
     }
