@@ -27,6 +27,8 @@
 
 extern char **environ;
 int logfd=-1;
+bool injectedToTrustCache = false;
+NSMutableArray *toInjectToTrustCache = nil;
 
 NSData *lastSystemOutput=nil;
 void injectDir(NSString *dir) {
@@ -38,9 +40,17 @@ void injectDir(NSString *dir) {
             [toInject addObject:file];
         }
     }
-    LOG("Injecting %lu files for %@", (unsigned long)toInject.count, dir);
+    LOG("Will inject %lu files for %@", (unsigned long)toInject.count, dir);
     if (toInject.count > 0) {
-        injectTrustCache(toInject, GETOFFSET(trustcache), pmap_load_trust_cache);
+        if (injectedToTrustCache) {
+            LOG("Can't inject files - Trust cache already injected");
+        } else {
+            for (NSString *path in toInject) {
+                if (![toInjectToTrustCache containsObject:path]) {
+                    [toInjectToTrustCache addObject:path];
+                }
+            }
+        }
     }
 }
 
@@ -255,13 +265,22 @@ bool extractDeb(NSString *debPath) {
         NSMutableArray *toInject = [NSMutableArray new];
         NSDictionary *files = tar.files;
         for (NSString *file in files.allKeys) {
-            if (cdhashFor(file) != nil) {
-                [toInject addObject:file];
+            NSString *path = [@"/" stringByAppendingString:file];
+            if (cdhashFor(path) != nil) {
+                [toInject addObject:path];
             }
         }
-        LOG("Injecting %lu files for %@", (unsigned long)toInject.count, debPath);
+        LOG("Will inject %lu files for %@", (unsigned long)toInject.count, debPath);
         if (toInject.count > 0) {
-            injectTrustCache(toInject, GETOFFSET(trustcache), pmap_load_trust_cache);
+            if (injectedToTrustCache) {
+                LOG("Can't inject files - Trust cache already injected");
+            } else {
+                for (NSString *path in toInject) {
+                    if (![toInjectToTrustCache containsObject:path]) {
+                        [toInjectToTrustCache addObject:path];
+                    }
+                }
+            }
         }
     }
     return result;
@@ -1295,3 +1314,32 @@ bool airplaneModeEnabled() {
     }
 }
 
+bool pidFileIsValid(NSString *pidfile) {
+    NSString *jbdpid = [NSString stringWithContentsOfFile:pidfile encoding:NSUTF8StringEncoding error:NULL];
+    if (jbdpid != nil && pidOfProcess("/usr/libexec/jailbreakd") == jbdpid.integerValue) {
+        return true;
+    }
+    return false;
+}
+
+bool pspawnHookLoaded() {
+    static int request[2] = { CTL_KERN, KERN_BOOTTIME };
+    struct timeval result;
+    size_t result_len = sizeof result;
+    
+    if (access("/var/run/pspawn_hook.ts", F_OK) == ERR_SUCCESS) {
+        NSString *stamp = [NSString stringWithContentsOfFile:@"/var/run/pspawn_hook.ts" encoding:NSUTF8StringEncoding error:NULL];
+        if (stamp != nil && sysctl(request, 2, &result, &result_len, NULL, 0) >= 0) {
+            if ([stamp integerValue] > result.tv_sec) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
+__attribute__((constructor))
+static void ctor() {
+    toInjectToTrustCache = [NSMutableArray new];
+}

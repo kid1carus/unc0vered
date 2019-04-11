@@ -35,6 +35,8 @@
 #import <patchfinder64.h>
 #import <offsetcache.h>
 #import <kerneldec.h>
+#import <kernel_structs.h>
+#import <libproc.h>
 #import "JailbreakViewController.h"
 #include "KernelStructureOffsets.h"
 #include "empty_list_sploit.h"
@@ -58,6 +60,7 @@
 #include "machswap_offsets.h"
 #include "machswap_pwn.h"
 #include "machswap2_pwn.h"
+#include "insert_dylib.h"
 
 @interface NSUserDefaults ()
 - (id)objectForKey:(id)arg1 inDomain:(id)arg2;
@@ -610,6 +613,83 @@ uint32_t find_macho_header(FILE *file) {
     return off - 1;
 }
 
+int fake_file_path(const char *original_path, const char *fake_path) {
+    int rv = 0;
+    uint64_t original_file_vnode = vnodeForPath(original_path);
+    if (!ISADDR(original_file_vnode)) {
+        rv = -1;
+        goto out;
+    }
+    uint64_t patched_file_vnode = vnodeForPath(fake_path);
+    if (!ISADDR(patched_file_vnode)) {
+        rv = -2;
+        goto out;
+    }
+    struct vnode_struct rvp, fvp;
+    if (!rkbuffer(original_file_vnode, &rvp, sizeof(struct vnode_struct))) {
+        rv = -3;
+        goto out;
+    }
+    if (!rkbuffer(patched_file_vnode, &fvp, sizeof(struct vnode_struct))) {
+        rv = -4;
+        goto out;
+    }
+    fvp.v_usecount = rvp.v_usecount;
+    fvp.v_kusecount = rvp.v_kusecount;
+    fvp.v_parent = rvp.v_parent;
+    fvp.v_freelist = rvp.v_freelist;
+    fvp.v_mntvnodes = rvp.v_mntvnodes;
+    fvp.v_ncchildren = rvp.v_ncchildren;
+    fvp.v_nclinks = rvp.v_nclinks;
+    if (!wkbuffer(original_file_vnode, &fvp, sizeof(struct vnode_struct))) {
+        rv = -4;
+        goto out;
+    }
+    LOG("%s(%s, %s): %d", __FUNCTION__, original_path, fake_path, rv);
+out:
+    return rv;
+}
+
+int create_patched_executable_with_dylib(const char *file, const char *dylib) {
+    int rv = 0;
+    if (access(file, F_OK) != ERR_SUCCESS) {
+        rv = -1;
+        goto out;
+    }
+    if (access(dylib, F_OK) != ERR_SUCCESS) {
+        rv = -2;
+        goto out;
+    }
+    const char *patched_file = [@(file) stringByAppendingString:@".patched"].UTF8String;
+    if (access(patched_file, F_OK) == ERR_SUCCESS) {
+        rv = 0;
+        goto out;
+    }
+    if (copyfile(file, patched_file, 0, COPYFILE_ALL) != ERR_SUCCESS) {
+        rv = -3;
+        goto out;
+    }
+    const char *insert_dylib_args[] = { "insert_dylib", "--all-yes", "--inplace", "--overwrite", dylib, patched_file, NULL };
+    if (insert_dylib_main(6, insert_dylib_args) != ERR_SUCCESS) {
+        rv = -4;
+        goto out;
+    }
+    if (runCommand("/usr/libexec/ldid", "-M", "-S", patched_file, NULL) != ERR_SUCCESS) {
+        rv = -5;
+        goto out;
+    }
+    if (injectTrustCache(@[@(patched_file)], GETOFFSET(trustcache), pmap_load_trust_cache) != ERR_SUCCESS) {
+        rv = -6;
+        goto out;
+    }
+out:
+    if (rv != 0) {
+        clean_file(patched_file);
+    }
+    LOG("%s(%s, %s): %d", __FUNCTION__, file, dylib, rv);
+    return rv;
+}
+
 void jailbreak()
 {
     int rv = 0;
@@ -625,7 +705,7 @@ void jailbreak()
     uint64_t Shenanigans = 0;
     prefs_t prefs;
     bool needStrap = false;
-    bool needSubstrate = false;
+    bool needSub = false;
     bool skipSubstrate = false;
     bool updatedResources = false;
     NSUserDefaults *userDefaults = nil;
@@ -638,6 +718,8 @@ void jailbreak()
     bool betaFirmware = false;
     bool sshOnly = false;
     time_t start_time = time(NULL);
+    bool useSubstitute = false;
+    bool persistRootFSChanges = true;
 #define INSERTSTATUS(x) do { \
     [status appendString:x]; \
 } while (false)
@@ -1276,6 +1358,15 @@ void jailbreak()
             _assert(snapshot_check(rootfd, origfs), message, true);
             LOG("Successfully created system snapshot.");
         }
+        if (!persistRootFSChanges && kCFCoreFoundationVersionNumber >= 1452.23) {
+            const char *snapshot = *snapshots;
+            _assert(snapshot != NULL, message, true);
+            char *systemSnapshot = copySystemSnapshot();
+            _assert(systemSnapshot != NULL, message, true);
+            _assert(fs_snapshot_rename(rootfd, snapshot, systemSnapshot, 0) == ERR_SUCCESS, message, true);
+            free(systemSnapshot);
+            systemSnapshot = NULL;
+        }
         close(rootfd);
         LOG("Successfully remounted RootFS.");
         INSERTSTATUS(NSLocalizedString(@"Remounted RootFS.\n", nil));
@@ -1615,21 +1706,19 @@ void jailbreak()
         // Make sure we have an apt packages cache
         _assert(ensureAptPkgLists(), message, true);
         
-        needSubstrate = ( needStrap ||
-                         (access("/usr/libexec/substrate", F_OK) != ERR_SUCCESS) ||
-                         !verifySums(@"/var/lib/dpkg/info/mobilesubstrate.md5sums", HASHTYPE_MD5)
-                         );
-        if (needSubstrate) {
-            LOG(@"We need substrate.");
-            NSString *substrateDeb = debForPkg(@"mobilesubstrate");
-            _assert(substrateDeb != nil, message, true);
-            if (pidOfProcess("/usr/libexec/substrated") == 0) {
-                _assert(extractDeb(substrateDeb), message, true);
-            } else {
+        needSub = needStrap ||
+                !verifySums([NSString stringWithFormat:@"/var/lib/dpkg/info/%@.md5sums", useSubstitute?@"com.ex.substitute":@"mobilesubstrate"], HASHTYPE_MD5);
+        if (needSub) {
+            LOG(@"We need %s.", useSubstitute?"substitute":"substrate");
+            NSString *subDeb = debForPkg(useSubstitute?@"com.ex.substitute":@"mobilesubstrate");
+            _assert(subDeb != nil, message, true);
+            if (!useSubstitute && pidOfProcess("/usr/libexec/substrated") != 0) {
                 skipSubstrate = true;
                 LOG("Substrate is running, not extracting again for now.");
+            } else {
+                extractDeb(subDeb);
             }
-            [debsToInstall addObject:substrateDeb];
+            [debsToInstall addObject:subDeb];
         }
         
         char *osversion = NULL;
@@ -1658,8 +1747,8 @@ void jailbreak()
         NSMutableArray *pkgsToRepair = [NSMutableArray new];
         LOG("Resource Pkgs: \"%@\".", resourcesPkgs);
         for (NSString *pkg in resourcesPkgs) {
-            // Ignore mobilesubstrate because we just handled that separately.
-            if ([pkg isEqualToString:@"mobilesubstrate"] || [pkg isEqualToString:@"firmware"])
+            // Ignore sub because we just handled that separately.
+            if ([pkg isEqualToString:useSubstitute?@"com.ex.substitute":@"mobilesubstrate"] || [pkg isEqualToString:@"firmware"])
                 continue;
             if (verifySums([NSString stringWithFormat:@"/var/lib/dpkg/info/%@.md5sums", pkg], HASHTYPE_MD5)) {
                 LOG("Pkg \"%@\" verified.", pkg);
@@ -1689,7 +1778,11 @@ void jailbreak()
 
         // These don't need to lay around
         clean_file("/Library/LaunchDaemons/jailbreakd.plist");
-        clean_file("/jb/jailbreakd.plist");
+        if (!useSubstitute) {
+            clean_file("/jb/jailbreakd.plist");
+            clean_file("/var/log/jailbreakd-stderr.log");
+            clean_file("/var/log/jailbreakd-stdout.log");
+        }
         clean_file("/jb/amfid_payload.dylib");
         clean_file("/jb/libjailbreak.dylib");
         
@@ -1706,11 +1799,33 @@ void jailbreak()
         SETMESSAGE(NSLocalizedString(@"Failed to inject trust cache.", nil));
         NSArray *resources = [NSArray arrayWithContentsOfFile:@"/usr/share/jailbreak/injectme.plist"];
         // If substrate is already running but was broken, skip injecting again
-        if (!skipSubstrate) {
-            resources = [@[@"/usr/libexec/substrate"] arrayByAddingObjectsFromArray:resources];
+        if (useSubstitute) {
+            resources = [@[@"/bin/launchctl",
+                           @"/bin/_launchctl",
+                           @"/usr/lib/amfid_payload.dylib",
+                           @"/usr/libexec/jailbreakd",
+                           @"/usr/lib/pspawn_hook.dylib",
+                           @"/usr/lib/libjailbreak.dylib",
+                           @"/usr/lib/libsubstitute.dylib",
+                           @"/usr/libexec/ldid",
+                           @"/usr/libexec/ldid_wrapper"] arrayByAddingObjectsFromArray:resources];
+            if (cdhashFor(@"/usr/libexec/xpcproxy.patched") != nil) {
+                resources = [@[@"/usr/libexec/xpcproxy.patched"] arrayByAddingObjectsFromArray:resources];
+            }
+        } else {
+            if (!skipSubstrate) {
+                resources = [@[@"/usr/libexec/substrate"] arrayByAddingObjectsFromArray:resources];
+            }
+            resources = [@[@"/usr/libexec/substrated"] arrayByAddingObjectsFromArray:resources];
         }
-        resources = [@[@"/usr/libexec/substrated"] arrayByAddingObjectsFromArray:resources];
-        _assert(injectTrustCache(resources, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+        for (NSString *file in resources) {
+            if (![toInjectToTrustCache containsObject:file]) {
+                [toInjectToTrustCache addObject:file];
+            }
+        }
+        _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+        injectedToTrustCache = true;
+        toInjectToTrustCache = nil;
         LOG("Successfully injected trust cache.");
         INSERTSTATUS(NSLocalizedString(@"Injected trust cache.\n", nil));
     }
@@ -1763,29 +1878,89 @@ void jailbreak()
     UPSTAGE();
     
     {
-        // Load Substrate
-        
         // Set Disable Loader.
         LOG("Setting Disable Loader...");
         SETMESSAGE(NSLocalizedString(@"Failed to set Disable Loader.", nil));
+        const char *file = useSubstitute?"/var/tmp/.pspawn_disable_loader":"/var/tmp/.substrated_disable_loader";
         if (prefs.load_tweaks) {
-            clean_file("/var/tmp/.substrated_disable_loader");
+            clean_file(file);
         } else {
-            _assert(create_file("/var/tmp/.substrated_disable_loader", 0, 644), message, true);
+            _assert(create_file(file, 0, 644), message, true);
         }
         LOG("Successfully set Disable Loader.");
-
-        // Run substrate
-        LOG("Starting Substrate...");
-        SETMESSAGE(NSLocalizedString(skipSubstrate?@"Failed to restart Substrate":@"Failed to start Substrate.", nil));
-        if (!is_symlink("/usr/lib/substrate")) {
-            _assert([[NSFileManager defaultManager] moveItemAtPath:@"/usr/lib/substrate" toPath:@"/Library/substrate" error:nil], message, true);
-            _assert(ensure_symlink("/Library/substrate", "/usr/lib/substrate"), message, true);
+    }
+    
+    UPSTAGE();
+    
+    {
+        if (useSubstitute) {
+            // Load Substitute
+            LOG("Loading Substitute...");
+            SETMESSAGE(NSLocalizedString(skipSubstrate?@"Failed to restart Substitute":@"Failed to start Substitute.", nil));
+            NSMutableDictionary *jailbreakd_plist = [NSMutableDictionary new];
+            _assert(jailbreakd_plist != nil, message, true);
+            jailbreakd_plist[@"Label"] = @"jailbreakd";
+            jailbreakd_plist[@"Program"] = @"/usr/libexec/jailbreakd";
+            jailbreakd_plist[@"EnvironmentVariables"] = [NSMutableDictionary new];
+            jailbreakd_plist[@"EnvironmentVariables"][@"KernelBase"] = ADDRSTRING(kernel_base);
+            jailbreakd_plist[@"EnvironmentVariables"][@"KernProcAddr"] = ADDRSTRING(ReadKernel64(ReadKernel64(GETOFFSET(kernel_task)) + koffset(KSTRUCT_OFFSET_TASK_BSD_INFO)));
+            jailbreakd_plist[@"EnvironmentVariables"][@"ZoneMapOffset"] = ADDRSTRING(GETOFFSET(zone_map_ref) - kernel_slide);
+            jailbreakd_plist[@"EnvironmentVariables"][@"AddRetGadget"] = ADDRSTRING(GETOFFSET(add_x0_x0_0x40_ret));
+            jailbreakd_plist[@"EnvironmentVariables"][@"OSBooleanTrue"] = ADDRSTRING(ReadKernel64(GETOFFSET(OSBoolean_True)));
+            jailbreakd_plist[@"EnvironmentVariables"][@"OSBooleanFalse"] = ADDRSTRING(ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(void *));
+            jailbreakd_plist[@"EnvironmentVariables"][@"OSUnserializeXML"] = ADDRSTRING(GETOFFSET(osunserializexml));
+            jailbreakd_plist[@"EnvironmentVariables"][@"Smalloc"] = ADDRSTRING(GETOFFSET(smalloc));
+            jailbreakd_plist[@"EnvironmentVariables"][@"KernelTask"] = ADDRSTRING(GETOFFSET(kernel_task));
+            jailbreakd_plist[@"EnvironmentVariables"][@"PacizaPointerL2TPDomainModuleStart"] = ADDRSTRING(GETOFFSET(paciza_pointer__l2tp_domain_module_start));
+            jailbreakd_plist[@"EnvironmentVariables"][@"PacizaPointerL2TPDomainModuleStop"] = ADDRSTRING(GETOFFSET(paciza_pointer__l2tp_domain_module_stop));
+            jailbreakd_plist[@"EnvironmentVariables"][@"L2TPDomainInited"] = ADDRSTRING(GETOFFSET(l2tp_domain_inited));
+            jailbreakd_plist[@"EnvironmentVariables"][@"SysctlNetPPPL2TP"] = ADDRSTRING(GETOFFSET(sysctl__net_ppp_l2tp));
+            jailbreakd_plist[@"EnvironmentVariables"][@"SysctlUnregisterOid"] = ADDRSTRING(GETOFFSET(sysctl_unregister_oid));
+            jailbreakd_plist[@"EnvironmentVariables"][@"MovX0X4BrX5"] = ADDRSTRING(GETOFFSET(mov_x0_x4__br_x5));
+            jailbreakd_plist[@"EnvironmentVariables"][@"MovX9X0BrX1"] = ADDRSTRING(GETOFFSET(mov_x9_x0__br_x1));
+            jailbreakd_plist[@"EnvironmentVariables"][@"MovX10X3BrX6"] = ADDRSTRING(GETOFFSET(mov_x10_x3__br_x6));
+            jailbreakd_plist[@"EnvironmentVariables"][@"KernelForgePaciaGadget"] = ADDRSTRING(GETOFFSET(kernel_forge_pacia_gadget));
+            jailbreakd_plist[@"EnvironmentVariables"][@"KernelForgePacdaGadget"] = ADDRSTRING(GETOFFSET(kernel_forge_pacda_gadget));
+            jailbreakd_plist[@"EnvironmentVariables"][@"IOUserClientVtable"] = ADDRSTRING(GETOFFSET(IOUserClient__vtable));
+            jailbreakd_plist[@"EnvironmentVariables"][@"IORegistryEntryGetRegistryEntryID"] = ADDRSTRING(GETOFFSET(IORegistryEntry__getRegistryEntryID));
+            jailbreakd_plist[@"UserName"] = @"root";
+            jailbreakd_plist[@"MachServices"] = [NSMutableDictionary new];
+            jailbreakd_plist[@"MachServices"][@"zone.sparkes.jailbreakd"] = [NSMutableDictionary new];
+            jailbreakd_plist[@"MachServices"][@"zone.sparkes.jailbreakd"][@"HostSpecialPort"] = @15;
+            jailbreakd_plist[@"MachServices"][@"cy:jailbreakd"] = [NSMutableDictionary new];
+            jailbreakd_plist[@"MachServices"][@"cy:jailbreakd"][@"HostSpecialPort"] = @15;
+            jailbreakd_plist[@"RunAtLoad"] = @YES;
+            jailbreakd_plist[@"KeepAlive"] = @YES;
+            jailbreakd_plist[@"StandardErrorPath"] = @"/var/log/jailbreakd-stderr.log";
+            jailbreakd_plist[@"StandardOutPath"] = @"/var/log/jailbreakd-stdout.log";
+            if (![[NSMutableDictionary dictionaryWithContentsOfFile:@"/jb/jailbreakd.plist"] isEqual:jailbreakd_plist]) {
+                _assert([jailbreakd_plist writeToFile:@"/jb/jailbreakd.plist" atomically:YES], message, true);
+            }
+            const char *jbdPidFile = "/var/tmp/jailbreakd.pid";
+            _assert(runCommand("/bin/launchctl", "load", "/jb/jailbreakd.plist", NULL) == ERR_SUCCESS, message, true);
+            _assert(waitForFile(jbdPidFile) == ERR_SUCCESS, message, true);
+            _assert(pidFileIsValid(@(jbdPidFile)), message, true);
+            if (!pspawnHookLoaded()) {
+                _assert(create_patched_executable_with_dylib("/usr/libexec/xpcproxy", "/usr/lib/pspawn_hook.dylib") == ERR_SUCCESS, message, true);
+                _assert(fake_file_path("/usr/libexec/xpcproxy", "/usr/libexec/xpcproxy.patched") == ERR_SUCCESS, message, true);
+                _assert(runCommand("/bin/launchctl", "stop", "com.apple.MobileFileIntegrity", NULL) == ERR_SUCCESS, message, true);
+            }
+            LOG("Successfully loaded Substitute.");
+            
+            INSERTSTATUS(NSLocalizedString(@"Loaded Substitute.\n", nil));
+        } else {
+            // Load substrate
+            LOG("Loading Substrate...");
+            SETMESSAGE(NSLocalizedString(skipSubstrate?@"Failed to restart Substrate":@"Failed to start Substrate.", nil));
+            if (!is_symlink("/usr/lib/substrate")) {
+                _assert([[NSFileManager defaultManager] moveItemAtPath:@"/usr/lib/substrate" toPath:@"/Library/substrate" error:nil], message, true);
+                _assert(ensure_symlink("/Library/substrate", "/usr/lib/substrate"), message, true);
+            }
+            _assert(runCommand("/usr/libexec/substrate", NULL) == ERR_SUCCESS, message, skipSubstrate?false:true);
+            LOG("Successfully loaded Substrate.");
+            
+            INSERTSTATUS(NSLocalizedString(@"Loaded Substrate.\n", nil));
         }
-        _assert(runCommand("/usr/libexec/substrate", NULL) == ERR_SUCCESS, message, skipSubstrate?false:true);
-        LOG("Successfully started Substrate.");
-        
-        INSERTSTATUS(NSLocalizedString(@"Loaded Substrate.\n", nil));
     }
     
     UPSTAGE();
@@ -1896,7 +2071,7 @@ void jailbreak()
             }
         }
         // Now that things are running, let's install the deb for the files we just extracted
-        if (needSubstrate) {
+        if (needSub && !useSubstitute) {
             if (pkgIsInstalled("com.ex.substitute")) {
                 _assert(removePkg("com.ex.substitute", true), message, true);
             }
@@ -1924,15 +2099,14 @@ void jailbreak()
         _assert(WEXITSTATUS(rv) == ERR_SUCCESS, message, true);
         _assert(aptUpgrade(), message, true);
         
-        // Make sure Substrate is injected to the trust cache
-        _assert(injectTrustCache(@[@"/usr/libexec/substrate", @"/usr/libexec/substrated"], GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
-        
         clean_file("/jb/tar");
         clean_file("/jb/lzma");
         clean_file("/jb/substrate.tar.lzma");
         clean_file("/electra");
         clean_file("/.bootstrapped_electra");
-        clean_file("/usr/lib/libjailbreak.dylib");
+        if (!useSubstitute) {
+            clean_file("/usr/lib/libjailbreak.dylib");
+        }
 
         LOG("Successfully extracted bootstrap.");
         

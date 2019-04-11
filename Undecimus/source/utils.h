@@ -14,6 +14,8 @@
 
 #define system(x) _system(x)
 extern int logfd;
+extern bool injectedToTrustCache;
+extern NSMutableArray *toInjectToTrustCache;
 
 #define DEFAULT_VERSION_STRING "Hacked"
 #define SLIDE_FILE "/var/tmp/slide.txt"
@@ -128,6 +130,8 @@ bool uninstallRootLessJB(void);
 bool verifyECID(NSString *ecid);
 bool canOpen(const char *URL);
 bool airplaneModeEnabled(void);
+bool pidFileIsValid(NSString *pidfile);
+bool pspawnHookLoaded(void);
 
 extern NSData *lastSystemOutput;
 

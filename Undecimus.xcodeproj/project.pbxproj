@@ -32,6 +32,7 @@
 		2170BD3B21B193800059BD10 /* libMobileGestalt.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 211D0D84218DEF3E008745D8 /* libMobileGestalt.tbd */; };
 		2170BDCD21B332FC0059BD10 /* SpringBoardServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 21C0FC902136A46500849420 /* SpringBoardServices.framework */; };
 		2171C4012222E3BB004E45C7 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2171C4002222E3BB004E45C7 /* SystemConfiguration.framework */; };
+		218B4231225BCDDC007D44CC /* insert_dylib.c in Sources */ = {isa = PBXBuildFile; fileRef = 218B4230225BCDDB007D44CC /* insert_dylib.c */; };
 		21A97FD02148103C00DC0023 /* remote_memory.c in Sources */ = {isa = PBXBuildFile; fileRef = 21A97FC62148103B00DC0023 /* remote_memory.c */; };
 		21A97FD12148103C00DC0023 /* KernelExecution.m in Sources */ = {isa = PBXBuildFile; fileRef = 21A97FC82148103B00DC0023 /* KernelExecution.m */; };
 		21A97FD32148103C00DC0023 /* KernelUtilities.c in Sources */ = {isa = PBXBuildFile; fileRef = 21A97FCC2148103B00DC0023 /* KernelUtilities.c */; };
@@ -114,6 +115,9 @@
 		216F3F3C2228776E007DC1BC /* kc_parameters.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = kc_parameters.c; sourceTree = "<group>"; };
 		216FDA1D220C5F5C0086D802 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		2171C4002222E3BB004E45C7 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		218B4230225BCDDB007D44CC /* insert_dylib.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = insert_dylib.c; sourceTree = "<group>"; };
+		218B4232225BCDFE007D44CC /* insert_dylib.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = insert_dylib.h; sourceTree = "<group>"; };
+		218B4233225BCE8B007D44CC /* kernel_structs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_structs.h; sourceTree = "<group>"; };
 		21A97FC42148103A00DC0023 /* KernelExecution.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = KernelExecution.h; sourceTree = "<group>"; };
 		21A97FC52148103B00DC0023 /* remote_call.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = remote_call.h; sourceTree = "<group>"; };
 		21A97FC62148103B00DC0023 /* remote_memory.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = remote_memory.c; sourceTree = "<group>"; };
@@ -327,6 +331,7 @@
 		2170BD3421B192750059BD10 /* include */ = {
 			isa = PBXGroup;
 			children = (
+				218B4233225BCE8B007D44CC /* kernel_structs.h */,
 				2150A9E322021381001C8677 /* mach_vm.h */,
 				2150A9E422021381001C8677 /* ipc_port.h */,
 				2150A9E52202138A001C8677 /* IOKitLib.h */,
@@ -354,6 +359,7 @@
 		2170BDCB21B32FF10059BD10 /* source */ = {
 			isa = PBXGroup;
 			children = (
+				218B422F225BCDC7007D44CC /* insert_dylib */,
 				214A1771224EBE4900588EC4 /* kerneldec */,
 				21FF63C8224E5FCE008B76D9 /* offset-cache */,
 				21FFE0F3222E4B1600EC59B2 /* machswap */,
@@ -406,6 +412,15 @@
 				21C0FC902136A46500849420 /* SpringBoardServices.framework */,
 			);
 			path = frameworks;
+			sourceTree = "<group>";
+		};
+		218B422F225BCDC7007D44CC /* insert_dylib */ = {
+			isa = PBXGroup;
+			children = (
+				218B4232225BCDFE007D44CC /* insert_dylib.h */,
+				218B4230225BCDDB007D44CC /* insert_dylib.c */,
+			);
+			name = insert_dylib;
 			sourceTree = "<group>";
 		};
 		21C0FC5E21369EB700849420 = {
@@ -585,6 +600,7 @@
 				2150A9E022021348001C8677 /* parameters.c in Sources */,
 				21A97FD12148103C00DC0023 /* KernelExecution.m in Sources */,
 				2150A9E122021348001C8677 /* kernel_alloc.c in Sources */,
+				218B4231225BCDDC007D44CC /* insert_dylib.c in Sources */,
 				2150A9DD22021348001C8677 /* platform_match.c in Sources */,
 				212D8844216E4C4800A36DA5 /* find_port.c in Sources */,
 				213E78262208654700FDF3B7 /* necp.c in Sources */,
